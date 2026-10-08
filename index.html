@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#1f6f43">
+<link rel="manifest" href="manifest.webmanifest">
+<title>Bitácora Chayote V1</title>
+<style>
+:root{--g:#1f6f43;--bg:#f4f6f4;--card:#fff;--tx:#172019;--mut:#68736b;--bd:#dbe2dc}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:var(--tx)}
+header{background:var(--g);color:white;padding:18px 16px 14px;position:sticky;top:0;z-index:2}
+h1{font-size:21px;margin:0 0 3px}header small{opacity:.9}
+main{max-width:760px;margin:auto;padding:12px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:16px;padding:14px;margin-bottom:12px;box-shadow:0 2px 7px #0000000a}
+.row{display:flex;gap:8px;flex-wrap:wrap}.row>*{flex:1;min-width:120px}
+button{border:0;border-radius:12px;padding:12px 14px;font-weight:700;background:var(--g);color:white;font-size:15px}
+button.secondary{background:#e8eee9;color:#173a25}button.danger{background:#a93232}
+textarea,input,select{width:100%;padding:11px;border:1px solid var(--bd);border-radius:11px;font:inherit;background:white}
+textarea{min-height:100px;resize:vertical}
+label{font-size:13px;font-weight:700;color:var(--mut);display:block;margin:7px 0 4px}
+.big{font-size:30px;font-weight:800}.muted{color:var(--mut);font-size:13px}.answer{white-space:pre-wrap;line-height:1.5}
+.item{border-top:1px solid var(--bd);padding:10px 0}.item:first-child{border-top:0}
+.tag{display:inline-block;background:#e8eee9;border-radius:20px;padding:3px 8px;font-size:12px;margin:2px}
+#status{margin-top:8px;color:var(--mut);font-size:13px}
+</style>
+</head>
+<body>
+<header><h1>🌱 Bitácora Chayote</h1><small>Versión 1 · voz, historial, cortes y ventas</small></header>
+<main>
+<section class="card">
+  <h2>🎙️ Registrar por voz</h2>
+  <textarea id="nota" placeholder="Ejemplo: Hoy 7 de octubre, día 44. Revisé los surcos 6 al 10..."></textarea>
+  <div class="row">
+    <button id="voz">🎙️ Hablar</button>
+    <button class="secondary" id="guardar">💾 Guardar registro</button>
+  </div>
+  <div id="status">También puedes escribir directamente.</div>
+</section>
+
+<section class="card">
+  <h2>📦 Corte / venta rápida</h2>
+  <div class="row">
+    <div><label>Fecha</label><input id="f" type="date"></div>
+    <div><label>Cajas</label><input id="cajas" type="number" step="1"></div>
+    <div><label>Kg/caja</label><input id="kg" type="number" step="0.1" value="24"></div>
+  </div>
+  <div class="row">
+    <div><label>Precio por caja ($)</label><input id="precio" type="number" step="0.01"></div>
+    <div><label>Calidad / comprador</label><input id="detalle" placeholder="1a / comprador"></div>
+  </div>
+  <button id="guardarCorte">📦 Guardar corte</button>
+</section>
+
+<section class="card">
+  <h2>🧠 Preguntarle a la bitácora</h2>
+  <input id="pregunta" placeholder="¿Cuántas cajas llevamos? / ¿Cuándo fue el último captan?">
+  <div style="height:8px"></div>
+  <button id="preguntar">🔎 Consultar</button>
+  <div id="respuesta" class="answer" style="margin-top:12px"></div>
+</section>
+
+<section class="card">
+  <h2>📊 Resumen</h2>
+  <div class="row">
+    <div><div class="big" id="totCajas">0</div><div class="muted">cajas</div></div>
+    <div><div class="big" id="totCortes">0</div><div class="muted">cortes</div></div>
+    <div><div class="big" id="totIngreso">$0</div><div class="muted">ingreso</div></div>
+  </div>
+</section>
+
+<section class="card">
+  <h2>🗂️ Historial</h2>
+  <input id="buscar" placeholder="Buscar: captan, cuello, surco 8, riego...">
+  <div id="historial"></div>
+</section>
+
+<section class="card">
+  <h2>💾 Respaldo</h2>
+  <div class="row">
+    <button class="secondary" id="exportar">⬇️ Exportar respaldo</button>
+    <label style="display:flex;align-items:center;justify-content:center;border:1px solid var(--bd);border-radius:12px;padding:12px;cursor:pointer">
+      ⬆️ Importar respaldo
+      <input id="importar" type="file" accept=".json" style="display:none">
+    </label>
+  </div>
+  <p class="muted">Guarda un respaldo cada cierto tiempo. La V1 almacena los datos en este teléfono/navegador.</p>
+</section>
+</main>
+
+<script>
+const KEY="bitacora_chayote_v1";
+let db=JSON.parse(localStorage.getItem(KEY)||"[]");
+const $=id=>document.getElementById(id);
+const today=()=>new Date().toISOString().slice(0,10);
+$("f").value=today();
+
+function save(){localStorage.setItem(KEY,JSON.stringify(db)); render();}
+function add(type,text,extra={}){
+  db.unshift({id:Date.now(),fecha:extra.fecha||today(),tipo:type,text, ...extra});
+  save();
+}
+function money(n){return new Intl.NumberFormat("es-MX",{style:"currency",currency:"MXN"}).format(n||0)}
+function render(){
+  const cuts=db.filter(x=>x.tipo==="corte");
+  const cajas=cuts.reduce((s,x)=>s+(Number(x.cajas)||0),0);
+  const ingreso=cuts.reduce((s,x)=>s+(Number(x.cajas)||0)*(Number(x.precio)||0),0);
+  $("totCajas").textContent=cajas;
+  $("totCortes").textContent=cuts.length;
+  $("totIngreso").textContent=money(ingreso);
+  const q=$("buscar").value.toLowerCase().trim();
+  const rows=db.filter(x=>!q || JSON.stringify(x).toLowerCase().includes(q)).slice(0,60);
+  $("historial").innerHTML=rows.map(x=>{
+    const tags=[x.tipo,x.fecha,x.diaCultivo?`día ${x.diaCultivo}`:""].filter(Boolean);
+    let extra="";
+    if(x.tipo==="corte") extra=`<br>📦 ${x.cajas} cajas · ${x.kg||""} kg/caja · ${money(x.precio)}/caja · ingreso ${money((x.cajas||0)*(x.precio||0))}`;
+    return `<div class="item"><div>${tags.map(t=>`<span class="tag">${escapeHtml(t)}</span>`).join("")}</div><div>${escapeHtml(x.text||"")}${extra}</div></div>`;
+  }).join("") || '<p class="muted">Todavía no hay registros.</p>';
+}
+function escapeHtml(s){return String(s).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]))}
+
+$("guardar").onclick=()=>{
+  const t=$("nota").value.trim(); if(!t)return alert("Escribe o dicta algo primero.");
+  const m=t.match(/día\s+(\d+)/i);
+  add("campo",t,{diaCultivo:m?Number(m[1]):null});
+  $("nota").value=""; $("status").textContent="Registro guardado.";
+};
+$("guardarCorte").onclick=()=>{
+  const cajas=Number($("cajas").value), precio=Number($("precio").value);
+  if(!cajas)return alert("Indica las cajas.");
+  add("corte",`Corte de ${cajas} cajas. ${$("detalle").value}` ,{fecha:$("f").value,cajas,kg:Number($("kg").value)||0,precio,detalle:$("detalle").value});
+  $("cajas").value="";$("precio").value="";$("detalle").value="";
+};
+$("buscar").oninput=render;
+
+$("voz").onclick=()=>{
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){$("status").textContent="Este navegador no ofrece dictado por voz. Prueba Chrome en Android.";return;}
+  const r=new SR(); r.lang="es-MX";r.interimResults=true;r.continuous=false;
+  $("status").textContent="🎙️ Te escucho...";
+  r.onresult=e=>{$("nota").value=Array.from(e.results).map(a=>a[0].transcript).join("");};
+  r.onerror=e=>$("status").textContent="No se pudo usar el micrófono: "+e.error;
+  r.onend=()=>$("status").textContent="Dictado terminado. Revisa y guarda.";
+  r.start();
+};
+
+function ask(q){
+  q=q.toLowerCase();
+  const cuts=db.filter(x=>x.tipo==="corte");
+  if(/cu[aá]ntas.*caja|cajas.*llev/.test(q)){
+    const n=cuts.reduce((s,x)=>s+Number(x.cajas||0),0);
+    return `Llevamos ${n} cajas en ${cuts.length} corte(s).`;
+  }
+  if(/cu[aá]nto.*(vend|ingres)|ingreso|venta.*total/.test(q)){
+    const n=cuts.reduce((s,x)=>s+Number(x.cajas||0)*Number(x.precio||0),0);
+    return `Ingreso acumulado registrado: ${money(n)}.`;
+  }
+  if(/cu[aá]ntos.*corte|n[uú]mero.*corte/.test(q)) return `Hay ${cuts.length} cortes registrados.`;
+  if(/últim|últim|ultima|última|cu[aá]ndo.*apli/.test(q) && /captan|tiofan|metalax|rootex|fungic|insectic|fertiliz/.test(q)){
+    const terms=q.match(/captan|tiofanato|metalaxil|rootex|fungicida|insecticida|fertilizante/)||[];
+    const term=terms[0]||"";
+    const found=db.filter(x=>JSON.stringify(x).toLowerCase().includes(term));
+    if(!found.length)return `No encuentro un registro que contenga "${term}".`;
+    const x=found[0]; return `El registro más reciente relacionado con "${term}" es del ${x.fecha}:\\n${x.text}`;
+  }
+  const dateMatch=q.match(/(\d{1,2})\s+de\s+([a-záéíóú]+)/i);
+  if(dateMatch){
+    const meses=["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+    const mi=meses.indexOf(dateMatch[2].toLowerCase());
+    if(mi>=0){
+      const y=new Date().getFullYear(), d=String(dateMatch[1]).padStart(2,"0"), f=`${y}-${String(mi+1).padStart(2,"0")}-${d}`;
+      const found=db.filter(x=>x.fecha===f);
+      return found.length?found.map(x=>`• ${x.tipo}: ${x.text}`).join("\\n"):`No hay registros para ${f}.`;
+    }
+  }
+  const terms=q.replace(/[¿?.,]/g," ").split(/\s+/).filter(w=>w.length>3);
+  const found=db.filter(x=>terms.some(t=>JSON.stringify(x).toLowerCase().includes(t))).slice(0,10);
+  if(found.length)return `Encontré ${found.length} registro(s) relacionados:\\n\\n`+found.map(x=>`• ${x.fecha} · ${x.tipo}: ${x.text}`).join("\\n");
+  return "Todavía no sé responder esa pregunta con las funciones de la V1. Sí puedo buscar texto, fechas, aplicaciones y calcular cajas/cortes/ingresos.";
+}
+$("preguntar").onclick=()=>{$("respuesta").textContent=ask($("pregunta").value);};
+$("pregunta").onkeydown=e=>{if(e.key==="Enter")$("preguntar").click();};
+
+$("exportar").onclick=()=>{
+  const blob=new Blob([JSON.stringify(db,null,2)],{type:"application/json"});
+  const a=document.createElement("a");a.href=URL.createObjectURL(blob);
+  a.download=`bitacora-chayote-${today()}.json`;a.click();URL.revokeObjectURL(a.href);
+};
+$("importar").onchange=e=>{
+  const f=e.target.files[0];if(!f)return;
+  const r=new FileReader();r.onload=()=>{try{
+    const x=JSON.parse(r.result);if(!Array.isArray(x))throw 0;
+    db=x;save();alert("Respaldo importado correctamente.");
+  }catch{alert("El archivo no parece ser un respaldo válido.");}};r.readAsText(f);
+};
+if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
+render();
+</script>
+</body></html>

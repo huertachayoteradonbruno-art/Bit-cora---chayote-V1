@@ -1,0 +1,10 @@
+{
+  "name":"Bitácora Chayote",
+  "short_name":"Chayote",
+  "start_url":"./",
+  "display":"standalone",
+  "background_color":"#f4f6f4",
+  "theme_color":"#1f6f43",
+  "lang":"es-MX",
+  "icons":[]
+}
